@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /**
@@ -10,16 +9,21 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
  * @dev Smart contract for registering and managing AI models on blockchain
  * @notice Implements immutable model versioning, cryptographic verification, and access control
  * @author Mayank Kumar - AI on Blockchain Project
+ * 
+ * FIXED ISSUES:
+ * - Removed deprecated Counters library (OpenZeppelin v5.0+)
+ * - Changed _setupRole to _grantRole (OpenZeppelin v5.0+)
+ * - Using manual counter instead of Counters library
+ * - Added bounds checking for modelId
  */
 contract AIModelRegistry is AccessControl, ReentrancyGuard {
-    using Counters for Counters.Counter;
     
     // Role definitions
     bytes32 public constant MODEL_OWNER_ROLE = keccak256("MODEL_OWNER_ROLE");
     bytes32 public constant VALIDATOR_ROLE = keccak256("VALIDATOR_ROLE");
     
-    // Model counter
-    Counters.Counter private _modelIdCounter;
+    // Model counter (manual implementation instead of deprecated Counters)
+    uint256 private _modelIdCounter;
     
     // Structs
     struct ModelMetadata {
@@ -99,9 +103,10 @@ contract AIModelRegistry is AccessControl, ReentrancyGuard {
     
     // Constructor
     constructor() {
-        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _setupRole(MODEL_OWNER_ROLE, msg.sender);
-        _setupRole(VALIDATOR_ROLE, msg.sender);
+        // Grant admin roles to deployer (updated for OpenZeppelin v5.0+)
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(MODEL_OWNER_ROLE, msg.sender);
+        _grantRole(VALIDATOR_ROLE, msg.sender);
     }
     
     /**
@@ -124,8 +129,9 @@ contract AIModelRegistry is AccessControl, ReentrancyGuard {
         require(bytes(_modelName).length > 0, "Model name cannot be empty");
         require(!modelHashExists[_modelHash], "Model hash already registered");
         
-        _modelIdCounter.increment();
-        uint256 newModelId = _modelIdCounter.current();
+        // Increment counter manually
+        _modelIdCounter++;
+        uint256 newModelId = _modelIdCounter;
         
         ModelMetadata storage newModel = models[newModelId];
         newModel.modelId = newModelId;
@@ -154,7 +160,7 @@ contract AIModelRegistry is AccessControl, ReentrancyGuard {
         }));
         
         // Grant model owner role
-        grantRole(MODEL_OWNER_ROLE, msg.sender);
+        _grantRole(MODEL_OWNER_ROLE, msg.sender);
         
         emit ModelRegistered(newModelId, msg.sender, _modelName, _modelHash, block.timestamp);
         
@@ -174,6 +180,7 @@ contract AIModelRegistry is AccessControl, ReentrancyGuard {
         bytes32 _newModelHash,
         string memory _changeLog
     ) external nonReentrant {
+        require(_modelId > 0 && _modelId <= _modelIdCounter, "Invalid model ID");
         require(models[_modelId].owner == msg.sender, "Not the model owner");
         require(models[_modelId].isActive, "Model is not active");
         require(!modelHashExists[_newModelHash], "New model hash already exists");
@@ -219,6 +226,7 @@ contract AIModelRegistry is AccessControl, ReentrancyGuard {
         string memory _datasetHash,
         uint256 _trainingTime
     ) external {
+        require(_modelId > 0 && _modelId <= _modelIdCounter, "Invalid model ID");
         require(models[_modelId].owner == msg.sender, "Not the model owner");
         
         ModelMetrics storage metrics = modelMetrics[_modelId];
@@ -243,6 +251,7 @@ contract AIModelRegistry is AccessControl, ReentrancyGuard {
         uint256 _modelId,
         bytes32 _providedHash
     ) external view returns (bool isValid) {
+        require(_modelId > 0 && _modelId <= _modelIdCounter, "Invalid model ID");
         require(models[_modelId].isActive, "Model is not active");
         return models[_modelId].modelHash == _providedHash;
     }
@@ -252,6 +261,7 @@ contract AIModelRegistry is AccessControl, ReentrancyGuard {
      * @param _modelId ID of the model to deactivate
      */
     function deactivateModel(uint256 _modelId) external {
+        require(_modelId > 0 && _modelId <= _modelIdCounter, "Invalid model ID");
         require(models[_modelId].owner == msg.sender, "Not the model owner");
         require(models[_modelId].isActive, "Model already deactivated");
         
@@ -267,7 +277,7 @@ contract AIModelRegistry is AccessControl, ReentrancyGuard {
      * @return Model metadata
      */
     function getModel(uint256 _modelId) external view returns (ModelMetadata memory) {
-        require(_modelId <= _modelIdCounter.current(), "Model does not exist");
+        require(_modelId > 0 && _modelId <= _modelIdCounter, "Invalid model ID");
         return models[_modelId];
     }
     
@@ -277,7 +287,7 @@ contract AIModelRegistry is AccessControl, ReentrancyGuard {
      * @return Model metrics
      */
     function getModelMetrics(uint256 _modelId) external view returns (ModelMetrics memory) {
-        require(_modelId <= _modelIdCounter.current(), "Model does not exist");
+        require(_modelId > 0 && _modelId <= _modelIdCounter, "Invalid model ID");
         return modelMetrics[_modelId];
     }
     
@@ -287,6 +297,7 @@ contract AIModelRegistry is AccessControl, ReentrancyGuard {
      * @return Array of model versions
      */
     function getModelVersionHistory(uint256 _modelId) external view returns (ModelVersion[] memory) {
+        require(_modelId > 0 && _modelId <= _modelIdCounter, "Invalid model ID");
         return modelVersionHistory[_modelId];
     }
     
@@ -304,7 +315,7 @@ contract AIModelRegistry is AccessControl, ReentrancyGuard {
      * @return Total count
      */
     function getTotalModels() external view returns (uint256) {
-        return _modelIdCounter.current();
+        return _modelIdCounter;
     }
     
     /**
@@ -313,6 +324,7 @@ contract AIModelRegistry is AccessControl, ReentrancyGuard {
      * @param _isValid Verification result
      */
     function validateModel(uint256 _modelId, bool _isValid) external onlyRole(VALIDATOR_ROLE) {
+        require(_modelId > 0 && _modelId <= _modelIdCounter, "Invalid model ID");
         require(models[_modelId].isActive, "Model is not active");
         emit ModelVerified(_modelId, msg.sender, _isValid, block.timestamp);
     }
